@@ -1,9 +1,9 @@
-name: app_environment
+name: sf_env
 channels:
   - snowflake
 dependencies:
-  - python=3.11.*
-  - snowflake-snowpark-python
   - streamlit
+  - snowflake-snowpark-python
+  - pip
   - pip:
-    - pydeck
+      - pydeck
