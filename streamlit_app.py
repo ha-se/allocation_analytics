@@ -8,6 +8,30 @@ st.set_page_config(layout="wide", page_title="再配置データ高度分析")
 st.title("🔍 再配置データ 高度スクリーニング＆分析")
 
 # ---------------------------------------------------------
+# 管理者設定: Git API Integration
+# ---------------------------------------------------------
+with st.expander("⚙️ 管理者設定: Git API Integration", expanded=False):
+    st.markdown("### Git API Integrationの作成")
+    st.info("GitHubリポジトリとSnowflakeを連携するためのAPI Integrationを作成します。\n"
+            "※この操作にはACCOUNTADMINロールまたはCREATE INTEGRATION権限が必要です。")
+    
+    if st.button("🔗 Git API Integration を作成", type="primary"):
+        try:
+            session = get_active_session()
+            sql = """
+            CREATE OR REPLACE API INTEGRATION git_api_integration
+              API_PROVIDER = git_https_api
+              API_ALLOWED_PREFIXES = ('https://github.com/ha-se')
+              ENABLED = TRUE;
+            """
+            session.sql(sql).collect()
+            st.success("✅ API Integration 'git_api_integration' の作成に成功しました！")
+        except Exception as e:
+            st.error(f"❌ エラーが発生しました: {str(e)}")
+    
+    st.markdown("---")
+
+# ---------------------------------------------------------
 # 1. データ取得関数（メインデータ ＆ マスターデータ）
 # ---------------------------------------------------------
 @st.cache_data
