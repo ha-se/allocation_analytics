@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import pydeck as pdk
 from snowflake.snowpark.context import get_active_session
 
 # ページ設定
@@ -276,50 +275,38 @@ with tab1:
         # 地図データの準備
         map_data = final_df.dropna(subset=["lat", "lon"]).copy()
         
-        # 色分け判定: Return Port Idがmatched_st_idsに含まれる場合は青、それ以外は赤
+        # 色分け判定: Return Port Idがmatched_st_idsに含まれる場合
         if matched_st_ids and 'Return Port Id' in map_data.columns:
-            map_data['color'] = map_data['Return Port Id'].astype(str).apply(
-                lambda x: [0, 0, 255, 200] if x in matched_st_ids else [255, 0, 0, 200]
-            )
-            st.caption("🔴 赤: 通常の再配置 | 🔵 青: collection→allocationの再配置")
+            # collection→allocationのデータ
+            matched_data = map_data[map_data['Return Port Id'].astype(str).isin(matched_st_ids)]
+            # それ以外のデータ
+            other_data = map_data[~map_data['Return Port Id'].astype(str).isin(matched_st_ids)]
+            
+            if not matched_data.empty and not other_data.empty:
+                st.caption("🔴 通常の再配置 | 🔵 collection→allocationの再配置")
+                
+                col_map1, col_map2 = st.columns(2)
+                
+                with col_map1:
+                    st.markdown("### 🔴 通常の再配置")
+                    st.caption(f"{len(other_data)} 件")
+                    st.map(other_data)
+                
+                with col_map2:
+                    st.markdown("### 🔵 collection→allocation")
+                    st.caption(f"{len(matched_data)} 件")
+                    st.map(matched_data, color="#0000FF")
+            elif not matched_data.empty:
+                st.markdown("### 🔵 collection→allocationの再配置")
+                st.caption(f"{len(matched_data)} 件")
+                st.map(matched_data, color="#0000FF")
+            else:
+                st.markdown("### 🔴 通常の再配置")
+                st.caption(f"{len(other_data)} 件")
+                st.map(other_data)
         else:
-            # デフォルトは全て赤
-            map_data['color'] = [[255, 0, 0, 200]] * len(map_data)
-        
-        # pydeckで地図表示
-        view_state = pdk.ViewState(
-            latitude=map_data['lat'].mean(),
-            longitude=map_data['lon'].mean(),
-            zoom=10,
-            pitch=0
-        )
-        
-        layer = pdk.Layer(
-            "ScatterplotLayer",
-            data=map_data,
-            get_position=["lon", "lat"],
-            get_color="color",
-            get_radius=100,
-            pickable=True,
-            auto_highlight=True,
-        )
-        
-        tooltip = {
-            "html": "<b>表示名:</b> {表示名}<br/>"
-                    "<b>再配置先:</b> {再配置先都道府県}<br/>"
-                    "<b>距離:</b> {再配置距離(km)} km<br/>"
-                    "<b>St.ID:</b> {Start Port Id} → {Return Port Id}",
-            "style": {"backgroundColor": "steelblue", "color": "white"}
-        }
-        
-        deck = pdk.Deck(
-            layers=[layer],
-            initial_view_state=view_state,
-            tooltip=tooltip,
-            map_style="mapbox://styles/mapbox/light-v9"
-        )
-        
-        st.pydeck_chart(deck)
+            # 色分けなし
+            st.map(map_data)
     else:
         st.warning("条件に一致するデータがありません")
 
