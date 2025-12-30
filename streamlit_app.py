@@ -305,11 +305,11 @@ with tab1:
                 with col_map2:
                     st.markdown("### 🔵 collection→allocation")
                     st.caption(f"{len(matched_data)} 件")
-                    st.map(matched_data, color="#0000FF")
+                    st.map(matched_data)
             elif not matched_data.empty:
                 st.markdown("### 🔵 collection→allocationの再配置")
                 st.caption(f"{len(matched_data)} 件")
-                st.map(matched_data, color="#0000FF")
+                st.map(matched_data)
             else:
                 st.markdown("### 🔴 通常の再配置")
                 st.caption(f"{len(other_data)} 件")
