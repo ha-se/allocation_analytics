@@ -3,7 +3,5 @@ channels:
   - snowflake
 dependencies:
   - streamlit
-  - snowflake-snowpark-python
-  - pip
   - pip:
-      - pydeck
+    - pydeck
