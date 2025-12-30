@@ -98,35 +98,45 @@ st.sidebar.header("🧹 自動クリーニング設定")
 apply_cleaning = st.sidebar.checkbox("マスタ条件で除外処理を行う", value=True)
 
 # ---------------------------------------------------------
-# 2.5 色分け用CSV読み込み
+# 2.5 色分け用データ読み込み（Snowflakeテーブルから）
 # ---------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.header("🎨 地図色分け設定")
-st.sidebar.caption("collection.csvとallocation.csvをアップロードすると、該当するデータを青色で表示します")
-
-collection_file = st.sidebar.file_uploader("collection.csv", type=['csv'])
-allocation_file = st.sidebar.file_uploader("allocation.csv", type=['csv'])
+st.sidebar.caption("COLLECTION_STとALLOCATION_STテーブルがあれば、該当するデータを青色で表示します")
 
 # CSVファイルが両方アップロードされている場合、St.IDのリストを取得
 collection_st_ids = set()
 allocation_st_ids = set()
 
-if collection_file is not None:
-    collection_df = pd.read_csv(collection_file)
-    if 'St.ID' in collection_df.columns:
-        collection_st_ids = set(collection_df['St.ID'].dropna().astype(str))
-    st.sidebar.success(f"Collection: {len(collection_st_ids)} 件のSt.ID読込")
-
-if allocation_file is not None:
-    allocation_df = pd.read_csv(allocation_file)
-    if 'St.ID' in allocation_df.columns:
-        allocation_st_ids = set(allocation_df['St.ID'].dropna().astype(str))
-    st.sidebar.success(f"Allocation: {len(allocation_st_ids)} 件のSt.ID読込")
-
-# collectionから回収してallocationに再配置しているSt.IDの集合
-matched_st_ids = collection_st_ids & allocation_st_ids
-if matched_st_ids:
-    st.sidebar.info(f"🔵 一致: {len(matched_st_ids)} 件（青色で表示）")
+# Snowflakeテーブルから読み込み
+try:
+    session = get_active_session()
+    
+    # COLLECTIONテーブルの読み込み
+    try:
+        collection_df = session.table("DEMO_DB.SALES_SCHEMA.COLLECTION_ST").to_pandas()
+        if 'ST_ID' in collection_df.columns:
+            collection_st_ids = set(collection_df['ST_ID'].dropna().astype(str))
+            st.sidebar.success(f"✅ Collection: {len(collection_st_ids)} 件")
+    except:
+        st.sidebar.info("ℹ️ COLLECTION_STテーブルなし")
+    
+    # ALLOCATIONテーブルの読み込み
+    try:
+        allocation_df = session.table("DEMO_DB.SALES_SCHEMA.ALLOCATION_ST").to_pandas()
+        if 'ST_ID' in allocation_df.columns:
+            allocation_st_ids = set(allocation_df['ST_ID'].dropna().astype(str))
+            st.sidebar.success(f"✅ Allocation: {len(allocation_st_ids)} 件")
+    except:
+        st.sidebar.info("ℹ️ ALLOCATION_STテーブルなし")
+    
+    # collectionから回収してallocationに再配置しているSt.IDの集合
+    matched_st_ids = collection_st_ids & allocation_st_ids
+    if matched_st_ids:
+        st.sidebar.info(f"🔵 一致: {len(matched_st_ids)} 件（青色で表示）")
+except Exception as e:
+    matched_st_ids = set()
+    st.sidebar.warning(f"⚠️ 色分けデータ読込エラー")
 
 if apply_cleaning:
     count_before = len(raw_df)
