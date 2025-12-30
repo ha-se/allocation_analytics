@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import pydeck as pdk
 from snowflake.snowpark.context import get_active_session
 
 # ページ設定
@@ -97,15 +98,52 @@ raw_df, exclude_ids = load_all_data()
 st.sidebar.header("🧹 自動クリーニング設定")
 apply_cleaning = st.sidebar.checkbox("マスタ条件で除外処理を行う", value=True)
 
+# ---------------------------------------------------------
+# 2.5 色分け用CSV読み込み
+# ---------------------------------------------------------
+st.sidebar.markdown("---")
+st.sidebar.header("🎨 地図色分け設定")
+st.sidebar.caption("collection.csvとallocation.csvをアップロードすると、該当するデータを青色で表示します")
+
+collection_file = st.sidebar.file_uploader("collection.csv", type=['csv'])
+allocation_file = st.sidebar.file_uploader("allocation.csv", type=['csv'])
+
+# CSVファイルが両方アップロードされている場合、St.IDのリストを取得
+collection_st_ids = set()
+allocation_st_ids = set()
+
+if collection_file is not None:
+    collection_df = pd.read_csv(collection_file)
+    if 'St.ID' in collection_df.columns:
+        collection_st_ids = set(collection_df['St.ID'].dropna().astype(str))
+    st.sidebar.success(f"Collection: {len(collection_st_ids)} 件のSt.ID読込")
+
+if allocation_file is not None:
+    allocation_df = pd.read_csv(allocation_file)
+    if 'St.ID' in allocation_df.columns:
+        allocation_st_ids = set(allocation_df['St.ID'].dropna().astype(str))
+    st.sidebar.success(f"Allocation: {len(allocation_st_ids)} 件のSt.ID読込")
+
+# collectionから回収してallocationに再配置しているSt.IDの集合
+matched_st_ids = collection_st_ids & allocation_st_ids
+if matched_st_ids:
+    st.sidebar.info(f"🔵 一致: {len(matched_st_ids)} 件（青色で表示）")
+
 if apply_cleaning:
     count_before = len(raw_df)
     
-    # (A) 回収元都道府県で1都3県だけを残す
+    # (A) 一都三県（東京都・神奈川県・千葉県・埼玉県）のデータのみに限定
+    # ※一都三県以外のデータは移動距離の計算精度に問題があるため除外
     target_prefectures = ['埼玉県', '千葉県', '神奈川県', '東京都']
-    if '回収元都道府県' in raw_df.columns:
-        processed_df = raw_df[raw_df['回収元都道府県'].isin(target_prefectures)]
-    else:
-        processed_df = raw_df.copy()
+    processed_df = raw_df.copy()
+    
+    # 回収元都道府県で一都三県のみを残す
+    if '回収元都道府県' in processed_df.columns:
+        processed_df = processed_df[processed_df['回収元都道府県'].isin(target_prefectures)]
+    
+    # 再配置先都道府県でも一都三県のみを残す
+    if '再配置先都道府県' in processed_df.columns:
+        processed_df = processed_df[processed_df['再配置先都道府県'].isin(target_prefectures)]
 
     # (B) 再配置マスターにあるST-IDを除外
     processed_df = processed_df[~processed_df['Start Port Id'].isin(exclude_ids)]
@@ -118,7 +156,8 @@ if apply_cleaning:
         processed_df = processed_df.dropna(subset=['再配置_FLAG'])
     
     count_after = len(processed_df)
-    st.sidebar.caption(f"除外件数: {count_before - count_after} 件 / 残件数: {count_after} 件")
+    excluded_count = count_before - count_after
+    st.sidebar.caption(f"✅ 一都三県外除外: {excluded_count} 件 / 残件数: {count_after} 件")
 
 else:
     processed_df = raw_df.copy()
@@ -234,9 +273,53 @@ tab1, tab2 = st.tabs(["🗺️ 地図で確認", "📋 データ一覧＆ダウ�
 
 with tab1:
     if not final_df.empty:
-        # エラー回避のため標準のst.mapを使用
-        map_data = final_df.dropna(subset=["lat", "lon"])
-        st.map(map_data)
+        # 地図データの準備
+        map_data = final_df.dropna(subset=["lat", "lon"]).copy()
+        
+        # 色分け判定: Return Port Idがmatched_st_idsに含まれる場合は青、それ以外は赤
+        if matched_st_ids and 'Return Port Id' in map_data.columns:
+            map_data['color'] = map_data['Return Port Id'].astype(str).apply(
+                lambda x: [0, 0, 255, 200] if x in matched_st_ids else [255, 0, 0, 200]
+            )
+            st.caption("🔴 赤: 通常の再配置 | 🔵 青: collection→allocationの再配置")
+        else:
+            # デフォルトは全て赤
+            map_data['color'] = [[255, 0, 0, 200]] * len(map_data)
+        
+        # pydeckで地図表示
+        view_state = pdk.ViewState(
+            latitude=map_data['lat'].mean(),
+            longitude=map_data['lon'].mean(),
+            zoom=10,
+            pitch=0
+        )
+        
+        layer = pdk.Layer(
+            "ScatterplotLayer",
+            data=map_data,
+            get_position=["lon", "lat"],
+            get_color="color",
+            get_radius=100,
+            pickable=True,
+            auto_highlight=True,
+        )
+        
+        tooltip = {
+            "html": "<b>表示名:</b> {表示名}<br/>"
+                    "<b>再配置先:</b> {再配置先都道府県}<br/>"
+                    "<b>距離:</b> {再配置距離(km)} km<br/>"
+                    "<b>St.ID:</b> {Start Port Id} → {Return Port Id}",
+            "style": {"backgroundColor": "steelblue", "color": "white"}
+        }
+        
+        deck = pdk.Deck(
+            layers=[layer],
+            initial_view_state=view_state,
+            tooltip=tooltip,
+            map_style="mapbox://styles/mapbox/light-v9"
+        )
+        
+        st.pydeck_chart(deck)
     else:
         st.warning("条件に一致するデータがありません")
 
